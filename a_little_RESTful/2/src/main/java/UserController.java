@@ -1,4 +1,10 @@
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Map;
+import java.io.InputStream;
+import java.io.Reader;
+import java.math.BigDecimal;
+import java.net.URL;
 // For DB
 import java.sql.*;
 import java.util.stream.Stream;
@@ -10,8 +16,13 @@ public class UserController
 	private ArrayList<User> system;
 	private int id = 1; 
 	private ResultSet rs;
+	private ResultSet secondRS;
+	private ResultSet specialQueryRS;
+	private ResultSet tempRS;
+	private ResultSet idk;
 	private Statement statement;
-	private final double DISTANCE_THRESHOLD = 0.03;
+	private Statement otherStatement;
+	private final double DISTANCE_THRESHOLD = 0.05;
 
 	// Define Data Source
 	private MysqlDataSource dataSource;
@@ -337,11 +348,24 @@ public class UserController
 		    }
 		    // For every filtered user, compare and apply matching
 	    	for(String compareTo:filteredUsers) {
+	    		tempRS = null;
+	    		statement = null;
+	    		statement = conn.createStatement();
+	    		System.out.println(compareTo);
+				System.out.println(user.getUsername());
+				tempRS = statement.executeQuery("SELECT COUNT(*) FROM SuggestedPartners WHERE SuggestedPartners.Username = '" + user.getUsername() + "' AND SuggestedPartners.PartnerUsername = '" + compareTo + "'");
 				User comparedUser = toUserObject(compareTo);
+				tempRS.next();
+				if(tempRS.getInt(1)>0)
+				{
+					continue;
+				}
+				
 				if(comparedUser == user)
 				{
 					continue;
 				}
+				
 				int score = 0;
 				//System.out.println("Here");
 				user.parseHobbies();
@@ -394,15 +418,16 @@ public class UserController
 	private void executeOneStatement(String current, String match)
 	{
 		rs = null;
-		statement = null;
+		otherStatement = null;
 
 		// Remember to remove from users potenial list
 		try {
-		    statement = conn.createStatement();
+			otherStatement = conn.createStatement();
 		    
-		    System.out.println( statement.executeUpdate(
+		    
+		    otherStatement.executeUpdate(
 			        "DELETE FROM SuggestedPartners " +
-			        "WHERE Username = '" + current + "' AND PartnerUsername ='" + match + "'"));
+			        "WHERE Username = '" + current + "' AND PartnerUsername ='" + match + "'");
 
 		} catch(SQLException e){ e.printStackTrace(); } 
 	}
@@ -457,73 +482,86 @@ public class UserController
 
 	public ArrayList<User> get10Potential(User current, int start, int end)
 	{
-		rs = null;
-		statement = null;
+		//because  we are using the toUserObject method, and that executes a statement into a result set
+		//we need another result set to store the results of the statement below
+		idk = null;
+		otherStatement = null;
 		ArrayList<User> temp = new ArrayList<User>();
 		// Remember to remove from users potenial list
 		try {
-		    statement = conn.createStatement();
-		    rs = statement.executeQuery(
+				otherStatement = conn.createStatement();
+		    
+				idk = otherStatement.executeQuery(
 		        "SELECT PartnerUsername " + 
 		        "FROM SuggestedPartners " +
 		        "WHERE SuggestedPartners.Username ='" + current.getUsername() + "' AND SuggestedPartners.Show = 'false' " +
 		    	"ORDER BY Score DESC " +
-		    	"LIMIT " + end + " ");
-		    rs.next();
-		    for(int i=0;i<start;i++)
+		    	"LIMIT " + end+1 + " ");
+				
+		    idk.next();
+		    /*for(int i=0;i<start;i++)
 		    {
-		    	rs.next();
-		    }
+		    	if (!idk.next()) {
+		    		return temp;
+		    	}
+		    	
+		    }*/
 		    do 
 		    {
 		    	
-		    	temp.add(this.toUserObject(rs.getString("PartnerUsername")));
+		    	temp.add(this.toUserObject(idk.getString("PartnerUsername")));
+		    	
 		    }
-		    while(rs.next() && temp.size() < end);
+		    while(idk.next() && temp.size() < end);
+		    
 		    return temp;
-		} catch(SQLException e){ e.printStackTrace(); return new ArrayList<User>(); } 
+		} catch(SQLException e){ e.printStackTrace(); return temp;} 
+		finally
+		{
+			return temp;
+		}
 	}
 	public ArrayList<User> getMatches(User current, int start, int end)
 	{
-		rs = null;
-		statement = null;
+		secondRS = null;
+		otherStatement = null;
 		ArrayList<User> temp = new ArrayList<User>();
-		// Remember to remove from users potenial list
+		
 		try {
-		    statement = conn.createStatement();
-		    rs = statement.executeQuery(
+			otherStatement = conn.createStatement();
+			secondRS = otherStatement.executeQuery(
 		        "SELECT LikesUsername " + 
 		        "FROM LikedUsers " +
 		        "WHERE LikedUsers.Username ='" + current.getUsername() + "' " +
-		    	"LIMIT " + end + " ");
-		    rs.next();
+		    	"LIMIT " + end+1 + " ");
+			secondRS.next();
 		    for(int i=0;i<start;i++)
 		    {
-		    	rs.next();
+		    	secondRS.next();
 		    }
 		    do
 		    {
-		    	if(oneMoreQuery(rs.getString("LikesUsername"), current.getUsername()))
-		    	temp.add(this.toUserObject(rs.getString("LikesUsername")));
+		    	if(oneMoreQuery(secondRS.getString("LikesUsername"), current.getUsername()))
+		    	temp.add(this.toUserObject(secondRS.getString("LikesUsername")));
 		    }
-		    while(rs.next() && temp.size()<end);
+		    while(secondRS.next() && temp.size()<=end);
 		    return temp;
 		} catch(SQLException e){ e.printStackTrace(); return new ArrayList<User>(); } 
 	}
 	private boolean oneMoreQuery(String match, String current)
 	{
-		rs = null;
+		specialQueryRS = null;
 		statement = null;
 		
 		
 		try {
 		    statement = conn.createStatement();
-		    rs = statement.executeQuery(
+		    specialQueryRS = statement.executeQuery(
 		        "SELECT LikesUsername " + 
 		        "FROM LikedUsers " +
 		        "WHERE LikedUsers.Username ='" + match + "' ");
-		    rs.next();
-		    if(rs.getString("LikesUsername").equals(current))
+		    specialQueryRS.next();
+		    if(specialQueryRS.getString("LikesUsername").equals(current))
 		    {
 		    	return true;
 		    }
@@ -556,7 +594,7 @@ public class UserController
 		    		"	`Gender` 	varchar(10) NOT NULL,\r\n" + 
 		    		"	`Location` 	varchar(50),\r\n" + 
 		    		"	`Languages` 		varchar(50) NOT NULL,\r\n" + 
-		    		"	`ProfilePicBytes` 	blob,\r\n" + 
+		    		"	`ProfilePicBytes` 	mediumblob,\r\n" + 
 		    		"	`InterestedInMen` 	varchar(10) NOT NULL DEFAULT \"false\",\r\n" + 
 		    		"	`InterestedInWomen` varchar(10) NOT NULL DEFAULT \"false\",\r\n" + 
 		    		"	PRIMARY KEY (`ID`)\r\n" + 

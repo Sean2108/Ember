@@ -16,7 +16,6 @@ import android.widget.Spinner;
 
 import com.ember.ember.R;
 import com.ember.ember.adapter.SectionsPagerAdapter;
-import com.ember.ember.fragment.AddressFragment;
 import com.ember.ember.fragment.DatePickerFragment;
 import com.ember.ember.handlers.ExceptionHandler;
 import com.ember.ember.helper.BitmapHelper;
@@ -53,6 +52,7 @@ public class RegisterActivity extends AppCompatActivity {
     private boolean photoChanged;
     static final int REQUEST_TAKE_PHOTO = 1;
     static final int REQUEST_PICK_PHOTO = 2;
+    static final int REQUEST_MAP_LOCATION = 3;
     private ArrayList<Hobbies> hobbiesList;
     /**
 
@@ -83,8 +83,11 @@ public class RegisterActivity extends AppCompatActivity {
         tabs.getTabAt(0).setIcon(R.drawable.ic_baseline_face_24px);
         tabs.getTabAt(1).setIcon(R.drawable.ic_baseline_favorite_24px);
         setupHobbiesList();
-        userDetails = getIntent().hasExtra("user") ?
-                (UserDetails) getIntent().getSerializableExtra("user") : null;
+        userDetails = null;
+        if (getIntent().hasExtra("user")) {
+            userDetails = (UserDetails) getIntent().getSerializableExtra("user");
+            userDetails.setProfilePic();
+        }
     }
 
     /**
@@ -168,6 +171,11 @@ public class RegisterActivity extends AppCompatActivity {
         else if (requestCode == REQUEST_PICK_PHOTO && resultCode == RESULT_OK && data.getData() != null) {
             setGalleryPic(data.getData());
         }
+        else if (requestCode == REQUEST_MAP_LOCATION && resultCode == RESULT_OK) {
+            TextInputEditText addressField = findViewById(R.id.address);
+            addressField.setTag(data.getStringExtra("latlon"));
+            addressField.setText(data.getStringExtra("address"));
+        }
     }
 
     /**
@@ -202,8 +210,8 @@ public class RegisterActivity extends AppCompatActivity {
      * @param v select location button
      */
     public void showMapDialog(View v) {
-        DialogFragment newFragment = new AddressFragment(this, R.id.address);
-        newFragment.show(getSupportFragmentManager(), "map");
+        Intent mapIntent = new Intent(this, MapActivity.class);
+        startActivityForResult(mapIntent, REQUEST_MAP_LOCATION);
     }
 
     /**
@@ -244,7 +252,8 @@ public class RegisterActivity extends AppCompatActivity {
             return;
         }
         StringBuilder hobbiesString = new StringBuilder();
-        for (Hobbies hobby : hobbiesList) {
+        for (int i = 0; i < hobbiesList.size(); i++) {
+            Hobbies hobby = hobbiesList.get(i);
             hobbiesString.append(String.valueOf(hobby.isSelected()) + " ");
         }
         if (hobbiesString.length() > 0) {
@@ -253,7 +262,8 @@ public class RegisterActivity extends AppCompatActivity {
         RadioButton radioButton = findViewById(((RadioGroup) findViewById(R.id.gender)).getCheckedRadioButtonId());
         String gender = radioButton.getText().toString();
         boolean isRegister = userDetails == null;
-        userDetails = new UserDetails(
+        Object address = findViewById(R.id.address).getTag();
+        UserDetails newUserDetails = new UserDetails(
             isRegister ? getTextField(R.id.username) : userDetails.getUsername(),
             getTextField(R.id.name),
             isRegister ? new String(Hex.encodeHex(DigestUtils.sha(getTextField(R.id.password))))
@@ -262,14 +272,14 @@ public class RegisterActivity extends AppCompatActivity {
             getTextField(R.id.dob),
             hobbiesString.toString(),
             gender,
-            findViewById(R.id.address).getTag().toString(),
+            !(address instanceof String) ? "" : address.toString(),
             getTextField(R.id.address),
             ((Spinner) findViewById(R.id.languages)).getSelectedItem().toString(),
-            photoChanged ? BitmapHelper.convertBmpToString(bitmap) : null,
+            photoChanged ? BitmapHelper.convertBmpToString(bitmap) : isRegister ? null : userDetails.getProfilePicBytes(),
             ((CheckBox) findViewById(R.id.men)).isChecked(),
             ((CheckBox) findViewById(R.id.women)).isChecked()
         );
-        executeCall(userDetails, isRegister);
+        executeCall(newUserDetails, isRegister);
     }
 
     /**
@@ -288,7 +298,12 @@ public class RegisterActivity extends AppCompatActivity {
                     Bundle bundle = new Bundle();
                     bundle.putSerializable("user", userDetails);
                     intent.putExtras(bundle);
-                    startActivity(intent);
+                    if (isRegister) {
+                        startActivity(intent);
+                    }
+                    else {
+                        setResult(RESULT_OK, intent);
+                    }
                     finish();
                 } else {
                     ErrorHelper.raiseToast(RegisterActivity.this, ErrorHelper.Problem.CALL_FAILED);
